@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #09090b;
+  color: #f4f4f5;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@keyframes pick-flash {
+  0% {
+    background-color: color-mix(in oklab, #34d399 22%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.pick-flash {
+  animation: pick-flash 1.8s ease-out;
+}
