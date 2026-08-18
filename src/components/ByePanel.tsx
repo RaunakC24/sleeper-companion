@@ -55,7 +55,7 @@ export default function ByePanel({
                   className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3"
                 >
                   <p className="text-sm font-semibold text-rose-200">
-                    ⚠ Week {bucket.week} — {bucket.players.length} players on bye
+                    Week {bucket.week} — {bucket.players.length} players on bye
                   </p>
                   <p className="mt-1 text-xs text-rose-300/70">
                     {bucket.players

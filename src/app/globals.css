@@ -27,3 +27,27 @@ body {
 .pick-flash {
   animation: pick-flash 1.8s ease-out;
 }
+
+@keyframes run-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 40px -14px rgb(251 191 36 / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 64px -10px rgb(251 191 36 / 0.8);
+  }
+}
+
+.run-alert-active {
+  animation: run-glow 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-alert-active {
+    animation: none;
+    box-shadow: 0 0 40px -14px rgb(251 191 36 / 0.45);
+  }
+  .pick-flash {
+    animation: none;
+  }
+}

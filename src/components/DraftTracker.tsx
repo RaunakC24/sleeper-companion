@@ -2,13 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ByePanel from "./ByePanel";
+import DepthChartView from "./DepthChartView";
 import DraftSetup from "./DraftSetup";
+import HandcuffPanel from "./HandcuffPanel";
 import PickFeed from "./PickFeed";
+import RankingsPanel from "./RankingsPanel";
 import RunAlert from "./RunAlert";
 import TeamPicker from "./TeamPicker";
 import { analyzeByeWeeks } from "@/lib/byeAnalysis";
+import { indexDraftedById } from "@/lib/depthChart";
+import { planNextPick } from "@/lib/draftOrder";
+import { findHandcuffs } from "@/lib/handcuffs";
+import { fetchPlayers, type NflPlayer } from "@/lib/players";
+import {
+  buildRankings,
+  RankingsError,
+  type RankingsSet,
+} from "@/lib/rankings";
+import { analyzeTiers, gradePicks } from "@/lib/tiers";
 import { analyzeRuns, RUN_DEFAULTS, type RunSettings } from "@/lib/runDetector";
 import {
+  draftSlotForUser,
   getDraftPicks,
   getLeagueUsers,
   isMyPick,
@@ -49,6 +63,14 @@ export default function DraftTracker() {
   const [replayEnabled, setReplayEnabled] = useState(false);
   const [replayCount, setReplayCount] = useState(0);
 
+  const [tab, setTab] = useState<"board" | "depth">("board");
+  const [nflPlayers, setNflPlayers] = useState<NflPlayer[] | null>(null);
+  const [playersError, setPlayersError] = useState<string | null>(null);
+
+  const [rankings, setRankings] = useState<RankingsSet | null>(null);
+  const [rankingsError, setRankingsError] = useState<string | null>(null);
+  const [isParsingRankings, setIsParsingRankings] = useState(false);
+
   const draftId = draft?.draft_id ?? null;
   const isComplete = draft?.status === "complete";
   const shouldPoll = draftId != null && !isComplete && !replayEnabled;
@@ -67,6 +89,8 @@ export default function DraftTracker() {
       setReplayCount(0);
       setPollError(null);
       setLastSync(null);
+      setRankings(null);
+      setRankingsError(null);
       setDraft(resolved);
 
       if (resolved.league_id) {
@@ -172,6 +196,25 @@ export default function DraftTracker() {
     return () => clearTimeout(timer);
   }, [replayEnabled, replayCount, allPlayers]);
 
+  // NFL player data powers handcuffs and depth charts. It is served trimmed and
+  // cached by /api/players, so this runs once per session.
+  useEffect(() => {
+    if (!draftId || nflPlayers) return;
+    const controller = new AbortController();
+    fetchPlayers(controller.signal)
+      .then((payload) => {
+        setNflPlayers(payload.players);
+        setPlayersError(null);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setPlayersError(
+          err instanceof Error ? err.message : "Could not load player data.",
+        );
+      });
+    return () => controller.abort();
+  }, [draftId, nflPlayers]);
+
   useEffect(() => {
     if (freshPickNos.size === 0) return;
     const timer = setTimeout(() => setFreshPickNos(new Set()), FRESH_PICK_MS);
@@ -209,6 +252,64 @@ export default function DraftTracker() {
   );
 
   const byeAnalysis = useMemo(() => analyzeByeWeeks(myPlayers), [myPlayers]);
+
+  const draftedById = useMemo(
+    () => indexDraftedById(visiblePlayers),
+    [visiblePlayers],
+  );
+
+  const handleRankingsFile = useCallback(
+    async (file: File) => {
+      if (!nflPlayers) return;
+      setIsParsingRankings(true);
+      setRankingsError(null);
+      try {
+        const text = await file.text();
+        setRankings(buildRankings(file.name, text, nflPlayers));
+      } catch (err) {
+        setRankings(null);
+        setRankingsError(
+          err instanceof RankingsError
+            ? err.message
+            : "Could not read that CSV.",
+        );
+      } finally {
+        setIsParsingRankings(false);
+      }
+    },
+    [nflPlayers],
+  );
+
+  const pickPlan = useMemo(() => {
+    const slot = draft && myUserId ? draftSlotForUser(draft, myUserId) : null;
+    return draft
+      ? planNextPick(draft, slot, visiblePlayers.length)
+      : { nextPickNo: null, picksUntil: 0, round: null };
+  }, [draft, myUserId, visiblePlayers.length]);
+
+  const pickValues = useMemo(
+    () =>
+      rankings
+        ? gradePicks(visiblePlayers, rankings, draft?.settings?.teams)
+        : new Map(),
+    [rankings, visiblePlayers, draft?.settings?.teams],
+  );
+
+  const tierStatus = useMemo(() => {
+    if (!rankings) return [];
+    const draftedIds = new Set(
+      visiblePlayers.map((player) => player.playerId),
+    );
+    return analyzeTiers(rankings, draftedIds, pickPlan.picksUntil);
+  }, [rankings, visiblePlayers, pickPlan.picksUntil]);
+
+  const handcuffWatch = useMemo(
+    () =>
+      nflPlayers
+        ? findHandcuffs(visiblePlayers, nflPlayers, draftedById, myPickNos)
+        : [],
+    [visiblePlayers, nflPlayers, draftedById, myPickNos],
+  );
 
   if (!draft) {
     return (
@@ -302,43 +403,121 @@ export default function DraftTracker() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
-        <div className="space-y-6">
+      <div className="mb-6 flex gap-1 rounded-xl border border-zinc-800 bg-zinc-900/40 p-1">
+        <TabButton
+          active={tab === "board"}
+          onClick={() => setTab("board")}
+          label="Draft board"
+        />
+        <TabButton
+          active={tab === "depth"}
+          onClick={() => setTab("depth")}
+          label="Depth charts"
+        />
+      </div>
+
+      {tab === "board" ? (
+        <>
           <RunAlert
             analysis={runAnalysis}
             settings={runSettings}
             onSettingsChange={setRunSettings}
             showControls
           />
-          <TeamPicker
-            draft={draft}
-            leagueUsers={leagueUsers}
-            selectedUserId={myUserId}
-            onSelect={setMyUserId}
-          />
-          <ByePanel
-            analysis={byeAnalysis}
-            players={myPlayers}
-            hasTeamSelected={myUserId != null}
-          />
-        </div>
 
-        <div>
-          {!hasLoadedPicks ? (
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 px-5 py-8 text-center text-sm text-zinc-500">
-              Loading picks…
-            </div>
-          ) : (
-            <PickFeed
-              players={visiblePlayers}
-              myPickNos={myPickNos}
-              freshPickNos={freshPickNos}
-              teams={draft.settings?.teams ?? null}
+          <div className="mt-6">
+            <HandcuffPanel
+              watch={handcuffWatch}
+              isLoading={nflPlayers === null && playersError === null}
+              error={playersError}
+              hasPicks={visiblePlayers.some(
+                (player) => player.position === "RB",
+              )}
             />
-          )}
-        </div>
-      </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+            <div className="space-y-6">
+              <RankingsPanel
+                rankings={rankings}
+                tiers={tierStatus}
+                pickPlan={pickPlan}
+                hasTeamSelected={myUserId != null}
+                playersReady={nflPlayers !== null}
+                isParsing={isParsingRankings}
+                error={rankingsError}
+                onLoad={handleRankingsFile}
+                onClear={() => {
+                  setRankings(null);
+                  setRankingsError(null);
+                }}
+              />
+              <TeamPicker
+                draft={draft}
+                leagueUsers={leagueUsers}
+                selectedUserId={myUserId}
+                onSelect={setMyUserId}
+              />
+              <ByePanel
+                analysis={byeAnalysis}
+                players={myPlayers}
+                hasTeamSelected={myUserId != null}
+              />
+            </div>
+
+            <div>
+              {!hasLoadedPicks ? (
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 px-5 py-8 text-center text-sm text-zinc-500">
+                  Loading picks…
+                </div>
+              ) : (
+                <PickFeed
+                  players={visiblePlayers}
+                  myPickNos={myPickNos}
+                  freshPickNos={freshPickNos}
+                  teams={draft.settings?.teams ?? null}
+                  values={pickValues}
+                />
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <DepthChartView
+          players={nflPlayers ?? []}
+          draftedById={draftedById}
+          myPickNos={myPickNos}
+          isLoading={nflPlayers === null && playersError === null}
+          error={playersError}
+          scoringType={draft.metadata?.scoring_type}
+        />
+      )}
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition ${
+        active
+          ? "bg-zinc-100 text-zinc-900"
+          : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

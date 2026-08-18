@@ -27,18 +27,27 @@ export default function RunAlert({
 
   return (
     <section
-      className={`rounded-2xl border p-5 transition-colors ${
+      className={
         hasRun
-          ? "border-amber-500/50 bg-amber-950/20"
-          : "border-zinc-800 bg-zinc-900/40"
-      }`}
+          ? "run-alert-active rounded-2xl border-2 border-amber-400/60 bg-amber-950/30 p-5 ring-1 ring-amber-400/20"
+          : "rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5"
+      }
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold tracking-wide text-zinc-200 uppercase">
-            Positional runs
-          </h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <div className="flex items-center gap-2">
+            {hasRun ? <LiveDot /> : null}
+            <h2
+              className={`text-sm font-semibold tracking-wide uppercase ${
+                hasRun ? "text-amber-300" : "text-zinc-200"
+              }`}
+            >
+              {hasRun ? "Run in progress" : "Positional runs"}
+            </h2>
+          </div>
+          <p
+            className={`mt-0.5 text-xs ${hasRun ? "text-amber-200/60" : "text-zinc-500"}`}
+          >
             {settings.threshold}+ of the last {settings.windowSize} picks at one
             position
           </p>
@@ -68,36 +77,52 @@ export default function RunAlert({
       </div>
 
       {hasRun ? (
-        <ul className="mt-4 space-y-3">
+        <div className="mt-4 space-y-3">
           {runs.map((run) => (
-            <li
+            <div
               key={run.position}
-              className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3"
+              className="relative overflow-hidden rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-500/20 via-amber-500/8 to-transparent py-4 pr-4 pl-5"
             >
-              <div className="flex items-center gap-2">
-                <span className="text-lg leading-none">🔥</span>
-                <p className="text-sm font-semibold text-amber-200">
-                  {run.position} run — {run.count} of the last{" "}
-                  {window.length} picks
+              <span
+                aria-hidden
+                className="absolute inset-y-0 left-0 w-1.5 bg-amber-400"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <p className="flex items-baseline gap-2.5">
+                  <span className="text-4xl leading-none font-black tracking-tight text-amber-300">
+                    {run.position}
+                  </span>
+                  <span className="text-xl font-bold tracking-[0.2em] text-amber-200/80 uppercase">
+                    run
+                  </span>
+                </p>
+                <p className="flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5">
+                  <span className="font-mono text-2xl leading-none font-bold text-amber-200">
+                    {run.count}
+                  </span>
+                  <span className="text-[11px] leading-tight text-amber-300/80">
+                    of the last
+                    <br />
+                    {window.length} picks
+                  </span>
                 </p>
               </div>
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
                 {run.picks.map((pick) => (
-                  <li
-                    key={pick.pickNo}
-                    className="flex items-baseline gap-2 text-xs text-zinc-400"
-                  >
-                    <span className="font-mono text-zinc-600">
+                  <li key={pick.pickNo} className="text-xs text-amber-100/70">
+                    <span className="font-mono text-amber-400/60">
                       #{pick.pickNo}
+                    </span>{" "}
+                    {pick.name}{" "}
+                    <span className="text-amber-300/40">
+                      {pick.team ?? "FA"}
                     </span>
-                    <span className="text-zinc-300">{pick.name}</span>
-                    <span className="text-zinc-600">{pick.team ?? "FA"}</span>
                   </li>
                 ))}
               </ul>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       ) : (
         <p className="mt-4 text-sm text-zinc-500">
           {window.length === 0
@@ -107,8 +132,12 @@ export default function RunAlert({
       )}
 
       {counts.length > 0 ? (
-        <div className="mt-4 border-t border-zinc-800 pt-3">
-          <p className="text-[11px] tracking-wide text-zinc-600 uppercase">
+        <div
+          className={`mt-4 border-t pt-3 ${hasRun ? "border-amber-400/20" : "border-zinc-800"}`}
+        >
+          <p
+            className={`text-[11px] tracking-wide uppercase ${hasRun ? "text-amber-200/50" : "text-zinc-600"}`}
+          >
             Last {window.length} picks
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -134,6 +163,15 @@ export default function RunAlert({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function LiveDot() {
+  return (
+    <span aria-hidden className="relative flex h-2.5 w-2.5">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-400" />
+    </span>
   );
 }
 

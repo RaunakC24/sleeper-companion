@@ -2,6 +2,7 @@
 
 import { getByeWeek } from "@/lib/byeWeeks";
 import { positionStyle } from "@/lib/positions";
+import type { PickValue } from "@/lib/tiers";
 import type { DraftedPlayer } from "@/lib/types";
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   myPickNos: Set<number>;
   freshPickNos: Set<number>;
   teams: number | null;
+  /** Empty when no rankings CSV is loaded. */
+  values: Map<number, PickValue>;
 }
 
 export default function PickFeed({
@@ -16,6 +19,7 @@ export default function PickFeed({
   myPickNos,
   freshPickNos,
   teams,
+  values,
 }: Props) {
   const newest = [...players].reverse();
 
@@ -39,6 +43,7 @@ export default function PickFeed({
           {newest.map((player) => {
             const isMine = myPickNos.has(player.pickNo);
             const bye = getByeWeek(player.team);
+            const value = values.get(player.pickNo);
             return (
               <li
                 key={player.pickNo}
@@ -67,6 +72,19 @@ export default function PickFeed({
                     </span>
                   ) : null}
                 </span>
+                {value && value.verdict !== "even" ? (
+                  <span
+                    title={`Ranked #${value.rank}, taken at #${value.pickNo}`}
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                      value.verdict === "value"
+                        ? "bg-[#00CEB8]/15 text-[#3FE0CE]"
+                        : "bg-[#FF2A6D]/15 text-[#FF6D9B]"
+                    }`}
+                  >
+                    {value.verdict === "value" ? "+" : ""}
+                    {value.delta}
+                  </span>
+                ) : null}
                 <span className="shrink-0 text-xs text-zinc-500">
                   {player.team ?? "FA"}
                 </span>
