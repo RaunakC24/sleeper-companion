@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import Image from "next/image";
+import { useEffect, useState } from "react";
+import GameLog from "./GameLog";
 import { getByeWeek } from "@/lib/byeWeeks";
+import type { GameLogSeason } from "@/lib/gamelog";
 import type { NflPlayer } from "@/lib/players";
-import { positionStyle } from "@/lib/positions";
+import { positionBarHex, positionStyle } from "@/lib/positions";
 import { scoringFor, type SeasonStatLine } from "@/lib/stats";
 import type { DraftedPlayer } from "@/lib/types";
 
@@ -18,6 +21,12 @@ interface Props {
   scoringType: string | undefined;
   isLoading: boolean;
   error: string | null;
+  gameLog: GameLogSeason[] | null;
+  gameLogLoading: boolean;
+  gameLogError: string | null;
+  isCompared: boolean;
+  compareFull: boolean;
+  onCompare: () => void;
   onClose: () => void;
 }
 
@@ -69,8 +78,16 @@ export default function PlayerStatsModal({
   scoringType,
   isLoading,
   error,
+  gameLog,
+  gameLogLoading,
+  gameLogError,
+  isCompared,
+  compareFull,
+  onCompare,
   onClose,
 }: Props) {
+  const [headshotFailed, setHeadshotFailed] = useState(false);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -98,7 +115,19 @@ export default function PlayerStatsModal({
         className="w-full max-w-2xl rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-zinc-800 p-5">
-          <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-4">
+            {headshotFailed ? null : (
+              <Image
+                src={`https://sleepercdn.com/content/nfl/players/${player.id}.jpg`}
+                alt=""
+                width={72}
+                height={72}
+                unoptimized
+                onError={() => setHeadshotFailed(true)}
+                className="h-18 w-18 shrink-0 rounded-full bg-zinc-800 object-cover object-top"
+              />
+            )}
+            <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${positionStyle(fantasyPosition)}`}
@@ -117,15 +146,30 @@ export default function PlayerStatsModal({
                 : ""}
               {player.injuryStatus ? ` · ${player.injuryStatus}` : ""}
             </p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-sm text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-100"
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={onCompare}
+              disabled={!isCompared && compareFull}
+              className={`rounded-lg border px-2.5 py-1 text-sm transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                isCompared
+                  ? "border-[#00CEB8]/50 bg-[#00CEB8]/10 text-[#3FE0CE]"
+                  : "border-zinc-700 text-zinc-300 hover:border-[#00CEB8]/50 hover:text-[#3FE0CE]"
+              }`}
+            >
+              {isCompared ? "In comparison" : "Compare"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg border border-zinc-700 px-2.5 py-1 text-sm text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-100"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="border-b border-zinc-800 px-5 py-3">
@@ -215,7 +259,21 @@ export default function PlayerStatsModal({
                   No fantasy stats on file for the last {seasons.length}{" "}
                   seasons — typically a rookie or a deep-bench player.
                 </p>
-              ) : null}
+              ) : (
+                <div className="mt-6 border-t border-zinc-800 pt-4">
+                  <p className="mb-3 text-[11px] tracking-wide text-zinc-500 uppercase">
+                    Game log · {scoring.label} by week
+                  </p>
+                  <GameLog
+                    seasons={gameLog ?? []}
+                    scoringKey={scoring.key}
+                    scoringLabel={scoring.label}
+                    accent={positionBarHex(fantasyPosition)}
+                    isLoading={gameLogLoading}
+                    error={gameLogError}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

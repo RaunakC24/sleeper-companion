@@ -1,16 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ComparePanel from "./ComparePanel";
 import PlayerStatsModal from "./PlayerStatsModal";
 import { getByeWeek } from "@/lib/byeWeeks";
+import { teamColor } from "@/lib/teamColors";
 import {
   buildTeamDepthChart,
   fantasyPositionFor,
+  isFilterCandidate,
   NFL_TEAMS,
 } from "@/lib/depthChart";
 import type { NflPlayer } from "@/lib/players";
 import { positionStyle, positionText } from "@/lib/positions";
-import { fetchStats, type StatsPayload } from "@/lib/stats";
+import { fetchGameLog, type GameLogSeason } from "@/lib/gamelog";
+import { MAX_COMPARE } from "@/lib/compare";
+import { fetchStats, scoringFor, type StatsPayload } from "@/lib/stats";
 import type { DraftedPlayer } from "@/lib/types";
 
 interface Props {
@@ -40,6 +45,14 @@ export default function DepthChartView({
   const [selected, setSelected] = useState<Selection | null>(null);
   const [stats, setStats] = useState<StatsPayload | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
+  // Game logs are cached by id and shared between the single-player card and
+  // the comparison panel, so re-opening a player costs nothing.
+  const [logs, setLogs] = useState<Map<string, GameLogSeason[]>>(new Map());
+  const [logErrors, setLogErrors] = useState<Map<string, string>>(new Map());
+
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [excludeId, setExcludeId] = useState<string | null>(null);
 
   // Season stats are only worth their ~500KB once someone actually opens a
   // player, so they load on the first click rather than with the tab.
@@ -56,6 +69,102 @@ export default function DepthChartView({
       });
     return () => controller.abort();
   }, [selected, stats, statsError]);
+
+  const byId = useMemo(
+    () => new Map(players.map((player) => [player.id, player])),
+    [players],
+  );
+
+  // Everyone whose weekly log the UI currently needs: the open card, the
+  // comparison set, and whoever the "without" filter is keyed to.
+  const neededLogIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (selected) ids.add(selected.player.id);
+    for (const id of compareIds) ids.add(id);
+    if (excludeId) ids.add(excludeId);
+    return [...ids].sort().join(",");
+  }, [selected, compareIds, excludeId]);
+
+  useEffect(() => {
+    const wanted = neededLogIds ? neededLogIds.split(",") : [];
+    const missing = wanted.filter(
+      (id) => id && !logs.has(id) && !logErrors.has(id),
+    );
+    if (missing.length === 0) return;
+
+    const controller = new AbortController();
+    for (const id of missing) {
+      fetchGameLog(id, controller.signal)
+        .then((payload) =>
+          setLogs((prev) => new Map(prev).set(id, payload.seasons)),
+        )
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setLogErrors((prev) =>
+            new Map(prev).set(
+              id,
+              err instanceof Error ? err.message : "Could not load game log.",
+            ),
+          );
+        });
+    }
+    return () => controller.abort();
+  }, [neededLogIds, logs, logErrors]);
+
+  const comparePlayers = useMemo(
+    () =>
+      compareIds
+        .map((id) => byId.get(id))
+        .filter((player): player is NflPlayer => player != null),
+    [compareIds, byId],
+  );
+
+  const loadingLogIds = useMemo(() => {
+    const pending = new Set<string>();
+    for (const id of neededLogIds ? neededLogIds.split(",") : []) {
+      if (id && !logs.has(id) && !logErrors.has(id)) pending.add(id);
+    }
+    return pending;
+  }, [neededLogIds, logs, logErrors]);
+
+  // Filter candidates are teammates whose absence could plausibly change a
+  // compared player's role — starters and immediate backups only.
+  const filterCandidates = useMemo(() => {
+    const teams = new Set(comparePlayers.map((player) => player.team));
+    if (teams.size === 0) return [];
+    return players
+      .filter(
+        (player) =>
+          teams.has(player.team) &&
+          isFilterCandidate(
+            player.depthPosition,
+            player.depthOrder,
+            player.position,
+          ),
+      )
+      .sort(
+        (a, b) =>
+          a.team.localeCompare(b.team) ||
+          (a.depthPosition ?? "").localeCompare(b.depthPosition ?? "") ||
+          (a.depthOrder ?? 99) - (b.depthOrder ?? 99),
+      );
+  }, [players, comparePlayers]);
+
+  /** True once the staged players span more than one NFL team. */
+  const spansTeams = useMemo(
+    () => new Set(comparePlayers.map((player) => player.team)).size > 1,
+    [comparePlayers],
+  );
+
+  const toggleCompare = (playerId: string) => {
+    setCompareIds((prev) =>
+      prev.includes(playerId)
+        ? prev.filter((id) => id !== playerId)
+        : prev.length >= MAX_COMPARE
+          ? prev
+          : [...prev, playerId],
+    );
+  };
 
   const groups = useMemo(
     () => buildTeamDepthChart(players, team, draftedById),
@@ -92,6 +201,50 @@ export default function DepthChartView({
 
   return (
     <div className="space-y-6">
+      {comparePlayers.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#00CEB8]/40 bg-[#00CEB8]/5 p-3">
+            <span className="text-[11px] font-semibold tracking-wide text-[#3FE0CE] uppercase">
+              Comparing
+            </span>
+            {comparePlayers.map((player) => (
+              <span
+                key={player.id}
+                className="flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-950/60 px-2 py-1 text-xs text-zinc-200"
+              >
+                {player.name}
+                <button
+                  type="button"
+                  onClick={() => toggleCompare(player.id)}
+                  aria-label={`Remove ${player.name}`}
+                  className="text-zinc-500 transition hover:text-zinc-100"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => setCompareOpen(true)}
+              disabled={comparePlayers.length < 2}
+              className="ml-auto rounded-lg bg-[#00CEB8] px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-[#3FE0CE] disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            >
+              {comparePlayers.length < 2
+                ? "Add one more"
+                : `Compare ${comparePlayers.length}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCompareIds([]);
+                setExcludeId(null);
+              }}
+              className="rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-100"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold tracking-wide text-zinc-200 uppercase">
@@ -113,10 +266,14 @@ export default function DepthChartView({
               key={abbr}
               type="button"
               onClick={() => setTeam(abbr)}
-              className={`rounded-md border px-2 py-1.5 font-mono text-xs transition ${
+              data-active={abbr === team}
+              style={
+                { "--team-color": teamColor(abbr) } as React.CSSProperties
+              }
+              className={`team-chip rounded-md border px-2 py-1.5 font-mono text-xs ${
                 abbr === team
-                  ? "border-zinc-400 bg-zinc-100 font-semibold text-zinc-900"
-                  : "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-100"
+                  ? "font-semibold"
+                  : "border-zinc-800 text-zinc-400"
               }`}
             >
               {abbr}
@@ -212,7 +369,7 @@ export default function DepthChartView({
         )}
 
         <p className="mt-4 border-t border-zinc-800 pt-3 text-xs text-zinc-600">
-          Click any player for their recent stats. Depth order comes from
+          Click any player for their recent stats, then add them to a comparison. Depth order comes from
           Sleeper; receivers are split by alignment — LWR, RWR and SWR (slot) —
           rather than WR1/2/3.
         </p>
@@ -232,7 +389,34 @@ export default function DepthChartView({
           scoringType={scoringType}
           isLoading={stats === null && statsError === null}
           error={statsError}
+          gameLog={logs.get(selected.player.id) ?? null}
+          gameLogLoading={loadingLogIds.has(selected.player.id)}
+          gameLogError={logErrors.get(selected.player.id) ?? null}
+          isCompared={compareIds.includes(selected.player.id)}
+          compareFull={compareIds.length >= MAX_COMPARE}
+          onCompare={() => {
+            toggleCompare(selected.player.id);
+            setSelected(null);
+          }}
           onClose={() => setSelected(null)}
+        />
+      ) : null}
+
+      {compareOpen && comparePlayers.length > 0 ? (
+        <ComparePanel
+          players={comparePlayers}
+          logs={logs}
+          draftedById={draftedById}
+          myPickNos={myPickNos}
+          scoringKey={scoringFor(scoringType).key}
+          scoringLabel={scoringFor(scoringType).label}
+          filterCandidates={filterCandidates}
+          excludeId={excludeId}
+          onExcludeChange={setExcludeId}
+          spansTeams={spansTeams}
+          onRemove={(id) => toggleCompare(id)}
+          onClose={() => setCompareOpen(false)}
+          loadingIds={loadingLogIds}
         />
       ) : null}
     </div>

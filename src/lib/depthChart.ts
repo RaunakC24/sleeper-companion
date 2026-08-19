@@ -14,6 +14,33 @@ export function fantasyPositionFor(depthPosition: string): string {
 
 export const NFL_TEAMS: string[] = Object.keys(BYE_WEEKS).sort();
 
+/**
+ * How deep a player can sit and still be worth offering as a "games without X"
+ * filter. A team's RB7 or fourth slot receiver never plays, so his absence
+ * explains nothing; K and DEF are absent entirely because a kicker missing a
+ * game tells you nothing about anyone else's usage.
+ */
+const FILTER_MAX_DEPTH: Record<string, number> = {
+  QB: 2,
+  RB: 3,
+  TE: 2,
+  LWR: 2,
+  RWR: 2,
+  SWR: 2,
+};
+
+/** Is this player plausibly someone whose absence changes a teammate's role? */
+export function isFilterCandidate(
+  depthPosition: string | null,
+  depthOrder: number | null,
+  position: string,
+): boolean {
+  if (!depthPosition || depthOrder == null) return false;
+  if (position === "FB") return false;
+  const max = FILTER_MAX_DEPTH[depthPosition];
+  return max != null && depthOrder <= max;
+}
+
 export interface DepthSlot {
   player: NflPlayer;
   /** The pick that took him, or null if he's still on the board. */

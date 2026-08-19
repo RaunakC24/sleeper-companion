@@ -38,13 +38,39 @@ group but are never suggested as handcuffs.
 **Depth charts tab** — browse any of the 32 teams' depth charts and see at a glance
 who is already drafted (dimmed, with the pick number) and who is still open. "Available
 only" hides everyone who is gone. Receivers follow Sleeper's alignment split — LWR, RWR
-and SWR (slot) — rather than WR1/2/3. **Click any player** for a card with his last
-three seasons: games, position-appropriate stat columns, and fantasy points in your
-league's scoring, total and per game. Players with no fantasy history (rookies, deep
-bench) say so rather than showing an empty table.
+and SWR (slot) — rather than WR1/2/3. Team chips pick up that team's identity color on
+hover.
 
-**Rankings overlay (Phase 2)** — upload your own CSV of rankings/tiers and the app
-grades every pick against it. Picks that fell past their rank get a green `+n` badge,
+**Click any player** for a card with his headshot, his last three seasons (games,
+position-appropriate stat columns, fantasy points in your league's scoring, total and
+per game) and a **week-by-week game log** of those points. Weeks he didn't play show as
+gaps, so an injury-shortened season reads at a glance. Players with no fantasy history
+(rookies, deep bench) say so rather than showing an empty table.
+
+**Side-by-side comparison** — hit *Compare* on a player card to stage him; the staging
+tray sits directly above the team grid so it's visible the moment you add someone.
+Compare up to four at once. Selections persist while you switch teams, so you can line
+up backs from different rosters.
+
+The comparison has two modes:
+
+- **Head to head** — a straight comparison of per-season games, points and points per
+  game, plus each player's game log. Works across teams.
+- **Without a teammate** — pick a teammate and every column narrows to the games that
+  player *missed*. Isaac Guerendo across 2023–25 is 11 games at 8.6/g; filtered to games
+  without Christian McCaffrey he is 10 games at 8.6/g, which is the number that actually
+  matters when deciding whether to draft the backup. Because the filter keeps only weeks
+  the compared player played *and* the excluded player didn't, team byes drop out on
+  their own rather than counting as absences.
+
+The teammate list is limited to plausible starters — QB1–2, RB1–3, TE1–2 and the top two
+at each receiver alignment. Kickers, defenses, fullbacks and the deep bench are excluded
+because their absence explains nothing about anyone else's usage. Note it reflects the
+*current* depth chart, so a player who has since slid down the order won't be offered
+even if he mattered in a past season.
+
+**Rankings overlay (Phase 2)** — upload your own CSV of rankings/tiers from the compact
+bar at the top of the board, and the app grades every pick against it. Picks that fell past their rank get a green `+n` badge,
 reaches get a pink `-n` one, with the cutoff set to one round (your league's team
 count). It also works out your next pick in the snake order and warns when a tier has
 no more players left than there are picks before your turn — i.e. it can empty before
@@ -85,6 +111,18 @@ current depth charts or rankings — only the handful still active will light up
   via [`src/app/api/stats/route.ts`](src/app/api/stats/route.ts), trimmed the same way
   to ~385KB for three seasons. They load lazily on the first player click rather than
   with the tab.
+- **Game logs** use Sleeper's per-player weekly endpoint through
+  [`src/app/api/gamelog/route.ts`](src/app/api/gamelog/route.ts), which folds three
+  seasons into one request per player and caches up to 300 players in module memory.
+  Sleeper returns a null entry for weeks a player missed, which is kept as a gap.
+- **Headshots** come from `sleepercdn.com`; the card hides the image if it 404s.
+- **Game logs are cached by player id** in component state and shared between the
+  single-player card and the comparison panel, so re-opening a player is free.
+- **"Played" means a non-null points value.** Sleeper returns a null entry for weeks a
+  player missed, so 0 means "played and scored nothing" while null means "did not
+  play" — the distinction the without-X filter depends on.
+- **Team colors** in [`src/lib/teamColors.ts`](src/lib/teamColors.ts) are mixed toward
+  white at render time, so navy and purple teams stay legible on the dark background.
 - **Rankings are matched by normalized name** — punctuation, casing and Jr./III
   suffixes are stripped, so "A.J. Brown" and "AJ Brown" collide. Position and team
   columns, when present, break ties between duplicate names.
@@ -109,10 +147,14 @@ src/
     HandcuffPanel.tsx       RB1 backup reminders
     DepthChartView.tsx      per-team depth charts w/ drafted state
     PickFeed.tsx            live pick list w/ value/reach badges
-    RankingsPanel.tsx       CSV upload, tier warnings, next pick
-    PlayerStatsModal.tsx    per-player season stats card
+    RankingsBar.tsx         compact CSV upload
+    TierPanel.tsx           tier warnings + next pick
+    PlayerStatsModal.tsx    per-player card: headshot, stats, game log
+    GameLog.tsx             weekly points chart
+    ComparePanel.tsx        side-by-side compare + without-X filter
   app/api/players/route.ts  trimmed + cached Sleeper player proxy
   app/api/stats/route.ts    trimmed + cached season stats proxy
+  app/api/gamelog/route.ts  per-player weekly points proxy
   lib/
     sleeper.ts              API client, ID parsing, roster resolution
     players.ts              trimmed player type + client fetch
@@ -123,12 +165,26 @@ src/
     draftOrder.ts           next-pick math for snake/linear
     stats.ts                stat types + scoring selection
     seasons.ts              which seasons to load
+    gamelog.ts              weekly log types + fetch
+    teamColors.ts           per-team identity colors
+    compare.ts              comparison math + without-X filtering
     runDetector.ts          run detection logic
     byeAnalysis.ts          bye bucketing + cluster logic
     byeWeeks.ts             static 2026 bye table
     positions.ts            Sleeper position colors
     types.ts                Sleeper API shapes
 ```
+
+## Board layout
+
+The draft board is ordered by how urgently you need each thing mid-draft:
+
+1. **Setup** — two compact bars: your team, and your rankings CSV. Both are
+   configuration you touch once.
+2. **Positional runs** — what is happening right now.
+3. **Tiers and bye weeks** beside the **live pick feed** — what to do about it. The
+   tier panel only appears once a CSV is loaded.
+4. **Handcuff watch** — opportunistic reference, kept at the bottom.
 
 ## Planned
 

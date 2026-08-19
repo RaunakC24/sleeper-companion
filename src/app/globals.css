@@ -51,3 +51,25 @@ body {
     animation: none;
   }
 }
+
+/* Depth-chart team chips. --team-color is set per chip from TEAM_COLORS; the
+   mixes keep dark navies and purples readable on the dark background. */
+.team-chip {
+  --team-color: #71717a;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.team-chip:hover {
+  border-color: color-mix(in oklab, var(--team-color) 65%, white);
+  background-color: color-mix(in oklab, var(--team-color) 28%, transparent);
+  color: color-mix(in oklab, var(--team-color) 45%, white);
+}
+
+.team-chip[data-active="true"] {
+  border-color: color-mix(in oklab, var(--team-color) 70%, white);
+  background-color: color-mix(in oklab, var(--team-color) 85%, white);
+  color: #0a0a0a;
+}

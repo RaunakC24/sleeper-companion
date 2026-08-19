@@ -6,7 +6,8 @@ import DepthChartView from "./DepthChartView";
 import DraftSetup from "./DraftSetup";
 import HandcuffPanel from "./HandcuffPanel";
 import PickFeed from "./PickFeed";
-import RankingsPanel from "./RankingsPanel";
+import RankingsBar from "./RankingsBar";
+import TierPanel from "./TierPanel";
 import RunAlert from "./RunAlert";
 import TeamPicker from "./TeamPicker";
 import { analyzeByeWeeks } from "@/lib/byeAnalysis";
@@ -417,32 +418,18 @@ export default function DraftTracker() {
       </div>
 
       {tab === "board" ? (
-        <>
-          <RunAlert
-            analysis={runAnalysis}
-            settings={runSettings}
-            onSettingsChange={setRunSettings}
-            showControls
-          />
-
-          <div className="mt-6">
-            <HandcuffPanel
-              watch={handcuffWatch}
-              isLoading={nflPlayers === null && playersError === null}
-              error={playersError}
-              hasPicks={visiblePlayers.some(
-                (player) => player.position === "RB",
-              )}
+        <div className="space-y-6">
+          {/* 1. Setup: who am I, and my rankings. Both are configuration. */}
+          <div className="space-y-2">
+            <TeamPicker
+              draft={draft}
+              leagueUsers={leagueUsers}
+              selectedUserId={myUserId}
+              onSelect={setMyUserId}
             />
-          </div>
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.1fr]">
-            <div className="space-y-6">
-              <RankingsPanel
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-2.5">
+              <RankingsBar
                 rankings={rankings}
-                tiers={tierStatus}
-                pickPlan={pickPlan}
-                hasTeamSelected={myUserId != null}
                 playersReady={nflPlayers !== null}
                 isParsing={isParsingRankings}
                 error={rankingsError}
@@ -452,12 +439,28 @@ export default function DraftTracker() {
                   setRankingsError(null);
                 }}
               />
-              <TeamPicker
-                draft={draft}
-                leagueUsers={leagueUsers}
-                selectedUserId={myUserId}
-                onSelect={setMyUserId}
-              />
+            </div>
+          </div>
+
+          {/* 2. What is happening right now. */}
+          <RunAlert
+            analysis={runAnalysis}
+            settings={runSettings}
+            onSettingsChange={setRunSettings}
+            showControls
+          />
+
+          {/* 3. What to do about it: decision aids beside the live feed. */}
+          <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+            <div className="space-y-6">
+              {rankings ? (
+                <TierPanel
+                  rankings={rankings}
+                  tiers={tierStatus}
+                  pickPlan={pickPlan}
+                  hasTeamSelected={myUserId != null}
+                />
+              ) : null}
               <ByePanel
                 analysis={byeAnalysis}
                 players={myPlayers}
@@ -481,7 +484,15 @@ export default function DraftTracker() {
               )}
             </div>
           </div>
-        </>
+
+          {/* 4. Opportunistic reference, kept out of the way. */}
+          <HandcuffPanel
+            watch={handcuffWatch}
+            isLoading={nflPlayers === null && playersError === null}
+            error={playersError}
+            hasPicks={visiblePlayers.some((player) => player.position === "RB")}
+          />
+        </div>
       ) : (
         <DepthChartView
           players={nflPlayers ?? []}
